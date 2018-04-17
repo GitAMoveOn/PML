@@ -1,0 +1,280 @@
+---
+title: "Course Project"
+author: "Werlindo Mangrobang"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: html_document
+---
+
+```{r setup, include=TRUE}
+#knitr::opts_chunk$set(echo = TRUE, warning = FALSE, fig.height = 3, cache = TRUE )
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, fig.height = 2.8, cache = TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), eval=TRUE )
+```
+
+## Executive Summary
+We have been provided training and testing data on 6 study participants who were asked to lift barbells correctly and incorrectly in 5 different ways. We were tasked with using this data to predict the manner in which they did the exercise. We built a random forest model that was able to predict ....
+
+_**The goal of your project is to predict the manner in which they did the exercise.**_  
+_**This is the "classe" variable in the training set. You may use any of the other variables to predict with.**_  
+
+## Exploratory Analysis
+```{r init, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
+#********************************************************************************************
+# Clean slate
+#********************************************************************************************
+rm( list = ls() )
+
+#********************************************************************************************
+# Initialize
+#********************************************************************************************
+set.seed(5429)
+library(dplyr) #data manipulation
+library(ggplot2) #plotting
+library(scales) #format scales in ggplot
+library(caret) #Machine Learning
+library(randomForest) #backup up to caret
+```
+
+```{r get.data, echo = FALSE, warning = FALSE, results="hide", message = FALSE,cache=TRUE }
+# URL.training <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+# URL.testing <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+new.dir <- "D:/Dropbox/Coursera/8. Practical Machine Learning/Wk 4/Assignment/Data"
+#new.dir <- "P:/Coursera/Practical Machine Learning/Wk4"
+setwd( new.dir )
+getwd()
+
+#Keep local copies
+# write.csv( training
+#            , paste0( getwd(), "/training.csv")
+#            , row.names = FALSE  
+#            , quote = FALSE      #Don't quote strings
+# ) 
+# write.csv( testing
+#            , paste0( getwd(), "/testing.csv")
+#            , row.names = FALSE  
+#            , quote = FALSE      #Don't quote strings
+# ) 
+
+# # I have local copies now, so just use those:
+training <- read.csv(paste0( getwd(), "/training.csv"))
+testing <- read.csv(paste0( getwd(), "/testing.csv"))
+```
+
+```{r eda1, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
+str(training)
+names(training)
+# str(training[,1:5])
+# str(training[,155:160])
+head(training, 30 )
+tail(training, 30 )
+# I see a bunch of NA and blanks ("") mixed, so I will re-read using na handling
+```
+
+From just looking at a few rows and performing a **summary** and a **str**, it appeared likely that many of the columns were missing or mostly missing. Those empty or sparse columns could probably be excluded from the analysis.
+
+```{r eda1.demo, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
+summary(training[,1:20])
+summary(training[,141:160])
+str(training[,1:20])
+str(training[,141:160])
+```
+
+```{r get.data.2, echo = FALSE, warning = FALSE, results="hide", message = FALSE,cache=TRUE }
+# new.dir <- "D:/Dropbox/Coursera/8. Practical Machine Learning/Wk 4/Assignment/Data"
+neKw.dir <- "P:/Coursera/Practical Machine Learning/Wk4"
+setwd( new.dir )
+getwd()
+
+training <- read.csv( paste0( getwd(), "/training.csv") 
+                      ,na.strings=c("NA","","NULL" ) )
+
+testing <- read.csv( paste0( getwd(), "/testing.csv")
+                     ,na.strings=c("NA","","NULL" ) )
+```
+
+```{r eda.2, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
+str(training)
+# Better, all NAs are NA now.
+# still, many variables appear to be mostly or all NA. Let's look at macro view by calculating pct NA of all variables
+
+# Create dataframe that stores the percentage of NA's for each variable
+pct.na <- training %>%
+  select( everything() ) %>%
+  summarize_all( funs( sum( is.na (.) ) ) )
+pct.na <- pct.na / dim(training)[1]
+head(pct.na)
+
+# transpose the table so can plot as variable
+library(reshape2)
+pct.na.long <- melt( pct.na )
+dim( pct.na.long )
+head(pct.na.long,6)
+```
+
+Here is a plot of the percent of values that are NA for each of the `r dim( pct.na.long )[1]` variables:
+
+```{r eda.viz.1, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
+# Create bar chart of Pct NA of all variables
+g <- ggplot(pct.na.long, aes(variable)) + 
+  #Bar Chart 
+  geom_bar(aes(weight=value)) + 
+  #Rotate X labels
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 4 )) +
+  #Format y-axis as percent
+  scale_y_continuous(labels=percent) +
+  #Re-label axes
+  ylab(label="Percent Missing") + xlab( label="Variables") +
+  #chart title
+  ggtitle("Figure 1. Percent of values that are missing or NA") +
+  #center the chart title
+  theme(plot.title = element_text(hjust = 0))
+
+g
+```
+
+This suggests that our strategy should not be to find individual variables, moreso that it appears that it's basically all or nothing for variables; either there are no missing values at all, or it's almost 100% missing. So I decided to scrub out the variables that are almost all missing, and kept the ones where there are none missing.
+
+```{r prep.1, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
+#-Create a vector denoting which columns are fully populated
+#-for each column (2) of training check sum of !is.na(training[,x] is equal to # rows
+all.there <- apply( !is.na(training), 2,sum ) == dim(training)[1]
+#check
+head(all.there,15)
+
+#-Create new data frames of only fully populated columns
+training.prep.1 <- training[ , all.there ]
+dim(training)[2]
+dim(training.prep.1)[2]
+dim(training)[2]-dim(training.prep.1)[2]
+testing.prep.1 <- testing[ , all.there ]
+```
+
+That removed `r dim(training)[2] - dim(training.prep.1)[2]` variables, so we were left with `r dim(training.prep.1)[2]` left to analyze. I continued to analyze the remaining variables to see if any could be removed.
+
+```{r eda.3, echo = TRUE, warning = FALSE, results="markup", message = FALSE, cache=TRUE }
+str(training.prep.1[,1:10])
+```
+
+```{r eda.3.1, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
+summary(training.prep.1[,1:10])
+head(training.prep.1,10)
+tail(training.prep.1,10)
+```
+
+It looks like some variables were administrative in nature, and thus shouldn't have a true impact on the results ( or would bias the results). These variables were then also removed:  
+
+- `X`: Looks simply to be a row index.  
+- `user_name`: Self-explanatory.  
+- `raw_timestamp_part_1`, `raw_timestamp_part_2`, `cvtd_timestamp`: Various timestamps.  
+- `new_window`, `num_window`: Seems to be other administrative variables.  
+
+Luckily they are all lined up in the first 7 variables, so they were easily lasered out.
+
+```{r prep.2, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
+#-Create new data frames excluding columns 1-7
+training.prep.2 <- training.prep.1[ ,8:dim(training.prep.1)[2] ]
+testing.prep.2 <- testing.prep.1[ ,8:dim(testing.prep.1)[2] ]
+```
+
+We took another look at the `r dim(training.prep.2)[2]` remaining variables:
+```{r eda.4, echo = TRUE, warning = FALSE, results="markup", message = FALSE, cache=TRUE }
+str(training.prep.2[,1:10])
+#Etc...
+```
+
+```{r eda.4.1, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
+summary(training.prep.2)
+head(training.prep.2,20)
+tail(training.prep.2,20)
+```
+
+Dataset looked pretty meaningful at this point, as there didn't appear to be any missing values or obvious weird values. So then moved onto modeling!
+
+```{r prep.3, echo = TRUE, warning = FALSE, results="markup", message = FALSE, cache=FALSE,eval=TRUE }
+training.final <- training.prep.2
+testing.final <- testing.prep.2
+dim(testing.final)
+```
+
+## Model Fitting and Selection
+_**You should create a report describing how you built your model,**_  
+_**how you used cross validation,**_  
+_**and why you made the choices you did. **_  
+I ultimately decided on a random forest model for the `r dim(training.prep.2)[2]` remaining variables. I selected random forest because it can be used for either regression or classification tasks. Ours is a classification task in which we are trying to "classe"ify exercises in either of the classes A, B, C, D or E.
+It's good versus missing values; our remaining variables have a small percent of missing values. It also mitigates the tendency of decision trees to overfit by apply random selection of data and features. 
+
+For cross validation I used k-fold cross validation. I selected this because it is the best avenue to minimize bias and variance error. Based on researching other findings and opinions of other data science practitionners on what the 'optimal' k should be, I selected 10 as an accepted standard to balancing computational and time requirements ( I only have access to a personal computer and limited study time ) as well as balancing the bias vs variance trade-off. 
+
+Also of note is that some are of the opinion that the random forest algorithm inherently performs a cross-validation of sorts because of repeated sampling varying sets of features and boostrapping data points. 
+```{r model.1, echo = TRUE, warning = FALSE, results="markup", message = FALSE, cache=TRUE }
+#********************************************************************************************
+# Build Random Forest Model
+#********************************************************************************************
+#-The dataset was already split for you in a training and test set. But I think the test set
+#-was more intended specfically for the course quiz.  So I will treat the training set as
+# an 'original' dataset and treat the provided "test" set as kind of validation set.
+
+# Partition data set
+train.pct <- .50
+test.pct <- .50
+# valPct <- trainPct - testPct
+
+train.ptn <- createDataPartition( training.final$classe
+                                  ,p = train.pct
+                                  ,list = FALSE )
+
+train.use <- training.final[ train.ptn, ]
+
+rf_model <-train(classe ~ . 
+                 ,data = train.use
+                 ,method="rf"
+                 ,trControl=trainControl(method="cv",number=10)
+                 ,prox=TRUE
+                 ,allowParallel=TRUE )
+#Look at it
+print(rf_model)
+```
+
+##Can we save it?
+
+```{r model.2, echo = FALSE, warning = FALSE, results="markup", message = FALSE, cache=TRUE }
+print(rf_model$finalModel)
+final_model <- rf_model$finalModel
+#Save it for later
+saveRDS(final_model, "./final_model.rds")
+```
+
+```{r model.3, echo = FALSE, warning = FALSE, results="markup", message = FALSE, cache=TRUE, eval=TRUE }
+final_model_load <- readRDS("./final_model.rds")
+final_model_load$confusion
+#print(final_model_load)
+```
+
+_**what you think the expected out of sample error is, **_  
+For random forests the out-of-sample error can be represented by the out-of-bag (OOB) error. In this case it is 1.1%, suggesting a very accurate model.
+
+`r library(scales)`
+But in addition to that I had held out `r percent( test.pct )` of the data for testing. So I will run the predictions on that data set and see if its comparable to the above OOB error.  
+
+```{r model.4, echo = FALSE, warning = FALSE, results="markup", message = FALSE, cache=TRUE, eval=TRUE }
+#Let's predict on that test holdout set (this is NOT the set that was given as "test")
+test.use <- training.final[ -train.ptn, ]
+
+test_pred <- predict(final_model_load, test.use )
+test_conf <- confusionMatrix(test_pred, test.use$classe )
+test_conf
+```
+So the accuracy of the test set is `r percent(test_conf$overall[1])`, or in other words the out-of-sample error is `r percent(1-test_conf$overall[1])`. Very close to the OOB error! Because they are so close I feel very good about this model. 
+
+Onto modeling vs the given test set, which is more akin to a validation set in the parlance I've used train/test up to this point. These are new cases for which we don't know the actual value of "classe".
+
+## Testing Results
+_**You will also use your prediction model to predict 20 different test cases. **_  
+```{r model.5, echo = TRUE, warning = FALSE, results="markup", message = FALSE, cache=TRUE, eval=TRUE }
+#Let's predict on that test holdout set (this is NOT the set that was given as "test")
+new_pred <- predict( final_model_load, testing.final  )
+new_pred
+```
+
+## Conclusion
+Given the exercise data that was provided to use, we were able to build a random forest classification model that was able to accurately predict the type of exercise that was being performed, 99% of the time.
