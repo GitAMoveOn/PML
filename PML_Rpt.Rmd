@@ -1,22 +1,18 @@
 ---
-title: "Course Project"
-author: "Werlindo Mangrobang"
+title: "Practical Machine Learning - Prediction Assignment"
+author: "W. Mangrobang"
 date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output: html_document
 ---
 
-```{r setup, include=TRUE}
-#knitr::opts_chunk$set(echo = TRUE, warning = FALSE, fig.height = 3, cache = TRUE )
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, fig.height = 2.8, cache = TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), eval=TRUE )
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, fig.height = 2.8, cache = TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), eval=TRUE, results = "hide", message=FALSE )
 ```
 
-## Executive Summary
-We have been provided training and testing data on 6 study participants who were asked to lift barbells correctly and incorrectly in 5 different ways. We were tasked with using this data to predict the manner in which they did the exercise. We built a random forest model that was able to predict ....
+### Executive Summary
+We have been provided training and testing data on 6 study participants, who were asked to lift barbells correctly and incorrectly in 5 different ways. We are tasked with using this data to predict the manner in which they did the exercise. A random forest model was built that was able to predict the exercises with an accuracy rate of about 99%.
 
-_**The goal of your project is to predict the manner in which they did the exercise.**_  
-_**This is the "classe" variable in the training set. You may use any of the other variables to predict with.**_  
-
-## Exploratory Analysis
+### Exploratory Analysis
 ```{r init, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
 #********************************************************************************************
 # Clean slate
@@ -38,8 +34,8 @@ library(randomForest) #backup up to caret
 # URL.training <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
 # URL.testing <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
 
-new.dir <- "D:/Dropbox/Coursera/8. Practical Machine Learning/Wk 4/Assignment/Data"
-#new.dir <- "P:/Coursera/Practical Machine Learning/Wk4"
+#new.dir <- "D:/Dropbox/Coursera/8. Practical Machine Learning/Wk 4/Assignment/Data"
+new.dir <- "P:/Coursera/Practical Machine Learning/Wk4"
 setwd( new.dir )
 getwd()
 
@@ -70,7 +66,7 @@ tail(training, 30 )
 # I see a bunch of NA and blanks ("") mixed, so I will re-read using na handling
 ```
 
-From just looking at a few rows and performing a **summary** and a **str**, it appeared likely that many of the columns were missing or mostly missing. Those empty or sparse columns could probably be excluded from the analysis.
+From just looking at a few rows and performing a **summary** and a **str**, it appeared that many of the columns were likely missing most or all values. These empty or sparse columns could probably be excluded from the analysis.
 
 ```{r eda1.demo, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
 summary(training[,1:20])
@@ -111,13 +107,13 @@ dim( pct.na.long )
 head(pct.na.long,6)
 ```
 
-Here is a plot of the percent of values that are NA for each of the `r dim( pct.na.long )[1]` variables:
+Here is a plot of the percent of values that are missing for each of the `r dim( pct.na.long )[1]` variables:
 
 ```{r eda.viz.1, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
 # Create bar chart of Pct NA of all variables
 g <- ggplot(pct.na.long, aes(variable)) + 
   #Bar Chart 
-  geom_bar(aes(weight=value)) + 
+  geom_bar(aes(weight=value), fill=rgb(97,156,255, maxColorValue=255) ) + 
   #Rotate X labels
   theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 4 )) +
   #Format y-axis as percent
@@ -132,7 +128,7 @@ g <- ggplot(pct.na.long, aes(variable)) +
 g
 ```
 
-This suggests that our strategy should not be to find individual variables, moreso that it appears that it's basically all or nothing for variables; either there are no missing values at all, or it's almost 100% missing. So I decided to scrub out the variables that are almost all missing, and kept the ones where there are none missing.
+This suggests we can cull many variables from our analysis. Moreso, it appears that it is basically all or nothing for variables; either there are no missing values at all, or it's almost 100% missing. So I decided to scrub out the variables that were almost all missing, and kept the ones where none are missing.
 
 ```{r prep.1, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
 #-Create a vector denoting which columns are fully populated
@@ -151,24 +147,21 @@ testing.prep.1 <- testing[ , all.there ]
 
 That removed `r dim(training)[2] - dim(training.prep.1)[2]` variables, so we were left with `r dim(training.prep.1)[2]` left to analyze. I continued to analyze the remaining variables to see if any could be removed.
 
-```{r eda.3, echo = TRUE, warning = FALSE, results="markup", message = FALSE, cache=TRUE }
+```{r eda.3, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
 str(training.prep.1[,1:10])
-```
-
-```{r eda.3.1, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
 summary(training.prep.1[,1:10])
 head(training.prep.1,10)
 tail(training.prep.1,10)
 ```
 
-It looks like some variables were administrative in nature, and thus shouldn't have a true impact on the results ( or would bias the results). These variables were then also removed:  
+After performing another **str**,**summary**, etc., it looked like some variables were administrative in nature, and thus shouldn't have a true impact on the results (or would bias the results). Thus the following variables were then also removed:  
 
 - `X`: Looks simply to be a row index.  
 - `user_name`: Self-explanatory.  
 - `raw_timestamp_part_1`, `raw_timestamp_part_2`, `cvtd_timestamp`: Various timestamps.  
 - `new_window`, `num_window`: Seems to be other administrative variables.  
 
-Luckily they are all lined up in the first 7 variables, so they were easily lasered out.
+Luckily they all lined up in the first 7 variables, so they were easily lasered out.
 
 ```{r prep.2, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE }
 #-Create new data frames excluding columns 1-7
@@ -176,9 +169,12 @@ training.prep.2 <- training.prep.1[ ,8:dim(training.prep.1)[2] ]
 testing.prep.2 <- testing.prep.1[ ,8:dim(testing.prep.1)[2] ]
 ```
 
-We took another look at the `r dim(training.prep.2)[2]` remaining variables:
-```{r eda.4, echo = TRUE, warning = FALSE, results="markup", message = FALSE, cache=TRUE }
+We then took another look at the `r dim(training.prep.2)[2]` remaining variables:
+```{r eda.4, echo = FALSE, warning = FALSE, results="markup", message = FALSE, cache=TRUE }
 str(training.prep.2[,1:10])
+```
+
+```{r eda.4.0, echo = TRUE, warning = FALSE, results="markup", message = FALSE, cache=TRUE }
 #Etc...
 ```
 
@@ -188,35 +184,31 @@ head(training.prep.2,20)
 tail(training.prep.2,20)
 ```
 
-Dataset looked pretty meaningful at this point, as there didn't appear to be any missing values or obvious weird values. So then moved onto modeling!
+Dataset looked pretty meaningful at this point, as there did not appear to be any missing values or obvious weird values. So then we moved on to modeling!
 
-```{r prep.3, echo = TRUE, warning = FALSE, results="markup", message = FALSE, cache=FALSE,eval=TRUE }
+```{r prep.3, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=FALSE,eval=TRUE }
 training.final <- training.prep.2
 testing.final <- testing.prep.2
 dim(testing.final)
 ```
 
-## Model Fitting and Selection
-_**You should create a report describing how you built your model,**_  
-_**how you used cross validation,**_  
-_**and why you made the choices you did. **_  
-I ultimately decided on a random forest model for the `r dim(training.prep.2)[2]` remaining variables. I selected random forest because it can be used for either regression or classification tasks. Ours is a classification task in which we are trying to "classe"ify exercises in either of the classes A, B, C, D or E.
-It's good versus missing values; our remaining variables have a small percent of missing values. It also mitigates the tendency of decision trees to overfit by apply random selection of data and features. 
+### Model Fitting and Selection
+I ultimately decided on a random forest model for the `r dim(training.prep.2)[2]` remaining variables. I selected random forest because it can be used for either regression or classification tasks. Ours is a classification task in which we are trying to "classe"ify exercises (pardon the pun) in either of the classes A, B, C, D or E. Random forest performs well versus missing values; our remaining variables have a small percent of missing values. The algorithm also mitigates the tendency of decision trees to overfit by applying random selection of data and features. 
 
-For cross validation I used k-fold cross validation. I selected this because it is the best avenue to minimize bias and variance error. Based on researching other findings and opinions of other data science practitionners on what the 'optimal' k should be, I selected 10 as an accepted standard to balancing computational and time requirements ( I only have access to a personal computer and limited study time ) as well as balancing the bias vs variance trade-off. 
+For partitioning out my data into train and test sets, I decided on a 70%/30% split, as that appears to be a common rule of thumb among data science practitioners. 70% also felt the largest I wanted to run as training set because my intution was that any larger would have been too resource intensive, and also would lend to overfitting. 
 
-Also of note is that some are of the opinion that the random forest algorithm inherently performs a cross-validation of sorts because of repeated sampling varying sets of features and boostrapping data points. 
-```{r model.1, echo = TRUE, warning = FALSE, results="markup", message = FALSE, cache=TRUE }
+Here is the training result:
+```{r model.1, echo = FALSE, warning = FALSE, results="markup", message = FALSE, cache=TRUE }
 #********************************************************************************************
 # Build Random Forest Model
 #********************************************************************************************
-#-The dataset was already split for you in a training and test set. But I think the test set
+#-The dataset was already split for you in a training and test set. But the test set
 #-was more intended specfically for the course quiz.  So I will treat the training set as
 # an 'original' dataset and treat the provided "test" set as kind of validation set.
 
 # Partition data set
-train.pct <- .50
-test.pct <- .50
+train.pct <- .70
+test.pct <- 1 - train.pct
 # valPct <- trainPct - testPct
 
 train.ptn <- createDataPartition( training.final$classe
@@ -234,28 +226,32 @@ rf_model <-train(classe ~ .
 #Look at it
 print(rf_model)
 ```
+The resulting models look highly accurate! The final model was settled at **mtry=2**. 
 
-##Can we save it?
+For cross validation I used k-fold cross validation. I selected this because it is the best avenue to minimize bias and variance error. Based on researching other findings and opinions of other data science practitioners on what the 'optimal' k should be, I selected 10 as an accepted standard to balancing computational and time requirements (this project is constrained by limited computational resources and time), as well as balancing the bias vs. variance trade-off. 
 
-```{r model.2, echo = FALSE, warning = FALSE, results="markup", message = FALSE, cache=TRUE }
-print(rf_model$finalModel)
+Here is the confusion matrix:
+```{r model.2, echo = FALSE, warning = FALSE, results="markup", message = FALSE, cache=TRUE, eval=TRUE }
+#print(rf_model$finalModel)
 final_model <- rf_model$finalModel
 #Save it for later
 saveRDS(final_model, "./final_model.rds")
+print(final_model)
 ```
 
 ```{r model.3, echo = FALSE, warning = FALSE, results="markup", message = FALSE, cache=TRUE, eval=TRUE }
 final_model_load <- readRDS("./final_model.rds")
-final_model_load$confusion
+#final_model_load$confusion
 #print(final_model_load)
 ```
 
-_**what you think the expected out of sample error is, **_  
-For random forests the out-of-sample error can be represented by the out-of-bag (OOB) error. In this case it is 1.1%, suggesting a very accurate model.
+`r library(scales)`
+For random forests the out-of-sample error can be represented by the out-of-bag (OOB) error. In this case it is `r percent( round( final_model_load$err.rate[final_model_load$ntree,1],4 ) )`, suggesting a very accurate model. Also of note is that random forest out-of-bag error can also be considered a proxy for cross-validation error.
 
 `r library(scales)`
-But in addition to that I had held out `r percent( test.pct )` of the data for testing. So I will run the predictions on that data set and see if its comparable to the above OOB error.  
+In addition to that I had held out `r percent( test.pct )` of the data for testing. So I will run the final model on that data set and see if resulting error of its predictions is comparable to the above OOB error.  
 
+Here is the confusion matrix and statistics for the scoring of that 30% test set:
 ```{r model.4, echo = FALSE, warning = FALSE, results="markup", message = FALSE, cache=TRUE, eval=TRUE }
 #Let's predict on that test holdout set (this is NOT the set that was given as "test")
 test.use <- training.final[ -train.ptn, ]
@@ -264,17 +260,18 @@ test_pred <- predict(final_model_load, test.use )
 test_conf <- confusionMatrix(test_pred, test.use$classe )
 test_conf
 ```
-So the accuracy of the test set is `r percent(test_conf$overall[1])`, or in other words the out-of-sample error is `r percent(1-test_conf$overall[1])`. Very close to the OOB error! Because they are so close I feel very good about this model. 
+So the accuracy of the test set is `r percent( round( test_conf$overall[1], 4) )`, or in other words the out-of-sample error is `r percent(round( 1-test_conf$overall[1],4)) `. Very close to the OOB error! Because they are so close I feel very good about this model. 
 
-Onto modeling vs the given test set, which is more akin to a validation set in the parlance I've used train/test up to this point. These are new cases for which we don't know the actual value of "classe".
+On to modeling vs. the provided "pml-testing" set, which will act as a kind of validation set. These are new cases for which we don't know the actual value of "classe".
 
-## Testing Results
-_**You will also use your prediction model to predict 20 different test cases. **_  
-```{r model.5, echo = TRUE, warning = FALSE, results="markup", message = FALSE, cache=TRUE, eval=TRUE }
+### Testing Results
+```{r model.5, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE, eval=TRUE }
 #Let's predict on that test holdout set (this is NOT the set that was given as "test")
 new_pred <- predict( final_model_load, testing.final  )
 new_pred
 ```
 
-## Conclusion
+These results were entered in the Course Project Prediction Quiz section, per assignment directions.
+
+### Conclusion
 Given the exercise data that was provided to use, we were able to build a random forest classification model that was able to accurately predict the type of exercise that was being performed, 99% of the time.
