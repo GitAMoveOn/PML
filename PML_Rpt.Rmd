@@ -266,7 +266,7 @@ On to modeling vs. the provided "pml-testing" set, which will act as a kind of v
 
 ### Testing Results
 ```{r model.5, echo = FALSE, warning = FALSE, results="hide", message = FALSE, cache=TRUE, eval=TRUE }
-#Let's predict on that test holdout set (this is NOT the set that was given as "test")
+#Let's predict on that PML-testing!
 new_pred <- predict( final_model_load, testing.final  )
 new_pred
 ```
